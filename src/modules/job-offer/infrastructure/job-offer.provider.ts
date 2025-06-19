@@ -1,23 +1,25 @@
-import { GetAllQueryDto } from '../application/dto/get-all-query.dto';
-import { BaseGetAllInterface } from '../../common/application/interface/base-get-all.interface';
-import { JobOfferRepository } from '../application/repository/job-offer.repository';
+import { IJobOfferProvider } from '../application/repository/job-offer.provider';
 import { JobOffer } from '../domain/job-offer.domain';
 import { chromium } from 'playwright';
 import { envs } from 'src/config';
 import { isAllowedByRobotsTxt } from 'src/modules/common/utils/robots-txt.util';
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Inject } from '@nestjs/common';
+import {
+  IJobOfferRepository,
+  JOB_OFFER_REPOSITORY,
+} from '../application/repository/job-offer.repository';
 
-export class JobOfferProvider implements JobOfferRepository {
-  async findAll(query: GetAllQueryDto): Promise<BaseGetAllInterface<JobOffer>> {
-    const pageParam = query.page || 1;
-    const limitParam = query.limit || 10;
+export class JobOfferProvider implements IJobOfferProvider {
+  constructor(
+    @Inject(JOB_OFFER_REPOSITORY)
+    private readonly jobOfferRepository: IJobOfferRepository,
+  ) {}
 
-    const startIndex = (pageParam - 1) * limitParam;
-    const endIndex = startIndex + limitParam;
-
+  async scrape(): Promise<void> {
+    const totalOffers = 50;
     const offersPerWebPage = 20;
-    const startWebPage = Math.floor(startIndex / offersPerWebPage) + 1;
-    const endWebPage = Math.floor((endIndex - 1) / offersPerWebPage) + 1;
+    const startWebPage = 1;
+    const endWebPage = Math.ceil(totalOffers / offersPerWebPage);
 
     if (!(await isAllowedByRobotsTxt(`${envs.jobOfferBaseUrl}`))) {
       throw new ConflictException('Scraping not allowed by robots.txt');
@@ -46,7 +48,7 @@ export class JobOfferProvider implements JobOfferRepository {
             const companyText = (company as HTMLElement)?.innerText || '';
             const salary = element.querySelectorAll('h3')[1]?.innerText || null;
             const [, postedAt] = element.querySelectorAll(
-              'section div div span',
+              'section > div > div > span',
             );
             const postedAtText = (postedAt as HTMLElement)?.innerText || '';
             return {
@@ -68,19 +70,8 @@ export class JobOfferProvider implements JobOfferRepository {
     }
 
     await browser.close();
+    const limitedJobs = allJobs.slice(0, totalOffers);
 
-    const maxTotal = 50;
-    const limitedJobs = allJobs.slice(0, maxTotal);
-
-    const data = limitedJobs.slice(
-      startIndex - (startWebPage - 1) * offersPerWebPage,
-      endIndex - (startWebPage - 1) * offersPerWebPage,
-    );
-
-    return {
-      data,
-      page: pageParam,
-      limit: limitParam,
-    };
+    await this.jobOfferRepository.upsertMany(limitedJobs);
   }
 }

@@ -4,6 +4,7 @@ import { BaseGetAllInterface } from 'src/modules/common/application/interface/ba
 
 export const JOB_OFFER_REPOSITORY = 'JOB_OFFER_REPOSITORY';
 
-export interface JobOfferRepository {
+export interface IJobOfferRepository {
   findAll(query: GetAllQueryDto): Promise<BaseGetAllInterface<JobOffer>>;
+  upsertMany(jobOffers: JobOffer[]): Promise<void>;
 }
